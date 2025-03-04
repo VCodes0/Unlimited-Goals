@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "550547663333",
+    "project_id": "unlimited-goals",
+    "storage_bucket": "unlimited-goals.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:550547663333:android:087f87137b5c3fdb1ba70c",
+        "android_client_info": {
+          "package_name": "com.example.ug"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAjkKpS_b7UJEdrwl4NIhgUuyF-24QL6N0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

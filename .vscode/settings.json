@@ -1,0 +1,13 @@
+{
+    "cSpell.words": [
+        "appname",
+        "cupertino",
+        "newvalue",
+        "Onboading",
+        "Roboto",
+        "selectedcountry"
+    ],
+    "files.exclude": {
+        ".**": true
+    }
+}
