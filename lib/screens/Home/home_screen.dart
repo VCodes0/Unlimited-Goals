@@ -1,7 +1,7 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import 'package:ug/components/Home/search_button.dart'; // Make sure this import is correct
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -11,68 +11,72 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  List<Map<String, String>> goalsList = [];
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
   DateTime? selectedDate;
 
-  void _showAddTodoDialog() {
+  Future<void> _showAddGoalDialog() async {
     String title = '';
+    DateTime? pickedDate;
 
-    showDialog(
+    await showDialog(
       context: context,
       builder: (BuildContext context) {
-        return CupertinoAlertDialog(
-          title: const Text(
-            'Add Your Goals',
-            style: TextStyle(
-              fontSize: 20,
-            ),
-          ),
+        return AlertDialog(
+          title: const Text('Add New Goal'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const SizedBox(height: 15),
-              CupertinoTextField(
-                placeholder: 'Title',
+              TextField(
+                decoration: const InputDecoration(
+                  labelText: 'Goal Title',
+                  border: OutlineInputBorder(),
+                ),
                 onChanged: (value) => title = value,
               ),
-              const SizedBox(height: 15),
-              CupertinoButton(
-                onPressed: () async {
-                  DateTime? pickedDate = await showDatePicker(
+              const SizedBox(height: 16),
+              ListTile(
+                title: Text(
+                  pickedDate == null
+                      ? 'Select Date'
+                      : DateFormat.yMMMd().format(pickedDate!),
+                ),
+                trailing: const Icon(Icons.calendar_today),
+                onTap: () async {
+                  final date = await showDatePicker(
                     context: context,
-                    initialDate:
-                        DateTime.now(), // Always set to the current date
-                    firstDate: DateTime.now(), // No dates before today
+                    initialDate: DateTime.now(),
+                    firstDate: DateTime.now(),
                     lastDate: DateTime(2101),
                   );
-                  setState(() {
-                    selectedDate = pickedDate;
-                  });
+                  if (date != null) {
+                    setState(() => pickedDate = date);
+                  }
                 },
-                child: Text(selectedDate == null
-                    ? 'Select Date'
-                    : DateFormat.yMMMd().format(selectedDate!)),
               ),
             ],
           ),
           actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.of(context).pop(),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
               child: const Text('Cancel'),
             ),
-            CupertinoDialogAction(
-              onPressed: () {
-                if (title.isNotEmpty && selectedDate != null) {
-                  setState(() {
-                    goalsList.add({
+            ElevatedButton(
+              onPressed: () async {
+                if (title.isNotEmpty && pickedDate != null) {
+                  final user = _auth.currentUser;
+                  if (user != null) {
+                    await _firestore.collection('goals').add({
+                      'userId': user.uid,
                       'title': title,
-                      'date': DateFormat.yMMMd().format(selectedDate!),
+                      'date': pickedDate,
+                      'createdAt': FieldValue.serverTimestamp(),
                     });
-                  });
-                  Navigator.of(context).pop();
+                    Navigator.pop(context);
+                  }
                 }
               },
-              child: const Text('OK'),
+              child: const Text('Add'),
             ),
           ],
         );
@@ -80,150 +84,161 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _deleteGoal(int index) {
-    setState(() {
-      goalsList.removeAt(index);
-    });
-  }
-
-  void _updateGoal(int index) {
-    String title = goalsList[index]['title']!;
-    DateTime? selectedDate =
-        DateFormat.yMMMd().parse(goalsList[index]['date']!);
-
-    showDialog(
+  Future<void> _deleteGoal(String goalId) async {
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
-        return CupertinoAlertDialog(
-          title: const Text(
-            'Update Your Goals',
-            style: TextStyle(
-              fontSize: 20,
+        return AlertDialog(
+          title: const Text('Delete Goal'),
+          content: const Text('Are you sure you want to delete this goal?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
             ),
-          ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      await _firestore.collection('goals').doc(goalId).delete();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = _auth.currentUser;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('My Goals'),
+      ),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: _firestore
+            .collection('goals')
+            .where('userId', isEqualTo: user?.uid)
+            .orderBy('date', descending: true)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
+
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final goals = snapshot.data?.docs ?? [];
+
+          return ListView.builder(
+            itemCount: goals.length,
+            itemBuilder: (context, index) {
+              final goal = goals[index];
+              final data = goal.data() as Map<String, dynamic>;
+              final date = (data['date'] as Timestamp).toDate();
+
+              return Dismissible(
+                key: Key(goal.id),
+                direction: DismissDirection.endToStart,
+                background: Container(
+                  color: Colors.red,
+                  alignment: Alignment.centerRight,
+                  padding: const EdgeInsets.only(right: 16),
+                  child: const Icon(Icons.delete, color: Colors.white),
+                ),
+                onDismissed: (direction) => _deleteGoal(goal.id),
+                child: Card(
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: ListTile(
+                    title: Text(data['title']),
+                    subtitle: Text(DateFormat.yMMMd().format(date)),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.edit),
+                      onPressed: () => _showEditGoalDialog(goal.id, data),
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _showAddGoalDialog,
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+
+  Future<void> _showEditGoalDialog(
+      String goalId, Map<String, dynamic> data) async {
+    final titleController = TextEditingController(text: data['title']);
+    DateTime? pickedDate = (data['date'] as Timestamp).toDate();
+
+    await showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Edit Goal'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const SizedBox(height: 15),
-              CupertinoTextField(
-                controller: TextEditingController(text: title),
-                placeholder: 'Title',
-                onChanged: (value) => title = value,
+              TextField(
+                controller: titleController,
+                decoration: const InputDecoration(
+                  labelText: 'Goal Title',
+                  border: OutlineInputBorder(),
+                ),
               ),
-              const SizedBox(height: 15),
-              CupertinoButton(
-                onPressed: () async {
-                  DateTime? pickedDate = await showDatePicker(
+              const SizedBox(height: 16),
+              ListTile(
+                title: Text(
+                  pickedDate == null
+                      ? 'Select Date'
+                      : DateFormat.yMMMd().format(pickedDate!),
+                ),
+                trailing: const Icon(Icons.calendar_today),
+                onTap: () async {
+                  final date = await showDatePicker(
                     context: context,
-                    initialDate: selectedDate, // Set to currently selected date
-                    firstDate: DateTime.now(), // No dates before today
-                    lastDate: DateTime(3000),
+                    initialDate: pickedDate,
+                    firstDate: DateTime.now(),
+                    lastDate: DateTime(2101),
                   );
-                  setState(() {
-                    selectedDate = pickedDate;
-                  });
+                  if (date != null) {
+                    setState(() => pickedDate = date);
+                  }
                 },
-                child: Text(DateFormat.yMMMd().format(selectedDate!)),
               ),
             ],
           ),
           actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.of(context).pop(),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
               child: const Text('Cancel'),
             ),
-            CupertinoDialogAction(
-              onPressed: () {
-                setState(() {
-                  goalsList[index] = {
-                    'title': title,
-                    'date': DateFormat.yMMMd().format(selectedDate!),
-                  };
+            ElevatedButton(
+              onPressed: () async {
+                await _firestore.collection('goals').doc(goalId).update({
+                  'title': titleController.text,
+                  'date': pickedDate,
+                  'updatedAt': FieldValue.serverTimestamp(),
                 });
-                Navigator.of(context).pop();
+                Navigator.pop(context);
               },
               child: const Text('Update'),
             ),
           ],
         );
       },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SearchButton(
-                hintText: "Search Here",
-                labelText: "Search",
-                textColor: Colors.black87,
-                prefixIcon: Icons.search,
-              ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: goalsList.length,
-                  itemBuilder: (context, index) {
-                    return Dismissible(
-                      key: Key(goalsList[index]['title']!),
-                      direction: DismissDirection.startToEnd,
-                      onDismissed: (direction) {
-                        _deleteGoal(index);
-                      },
-                      background: Container(
-                        color: Colors.red,
-                        child: const Icon(Icons.delete, color: Colors.white),
-                      ),
-                      secondaryBackground: Container(
-                        color: Colors.blue,
-                        child: const Icon(Icons.edit, color: Colors.white),
-                      ),
-                      child: ClipRRect(
-                        borderRadius:
-                            BorderRadius.circular(12), // Rounded corners
-                        child: Card(
-                          margin: const EdgeInsets.symmetric(vertical: 8),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(
-                                12), // Ensures card's rounded corners
-                          ),
-                          elevation: 4, // Optional shadow for effect
-                          child: ListTile(
-                            leading: Text(
-                              '${index + 1}',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                            title: Text(goalsList[index]['title']!),
-                            subtitle: Text(goalsList[index]['date']!),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.edit),
-                              onPressed: () => _updateGoal(index),
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _showAddTodoDialog,
-        backgroundColor: const Color(0xffFECD01),
-        child: const Icon(Icons.add, color: Colors.black),
-      ),
     );
   }
 }

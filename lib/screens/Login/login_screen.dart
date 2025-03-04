@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:ug/components/LoginScreen/loginbutton.dart';
 import 'package:ug/screens/OTP/otp_screen.dart';
 import '../../widgets/custom_textfield.dart';
@@ -13,6 +14,9 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   String selectedCountryCode = "+91";
+  TextEditingController phoneController = TextEditingController();
+
+  // Define the countries list
   // List of country names and their phone codes
   List<Map<String, String>> countries = [
     {"name": "Afghanistan", "code": "+93"},
@@ -210,7 +214,37 @@ class _LoginScreenState extends State<LoginScreen> {
     {"name": "Zimbabwe", "code": "+263"},
   ];
 
-  TextEditingController phoneController = TextEditingController();
+  Future<void> verifyPhoneNumber() async {
+    String phoneNumber = phoneController.text.trim();
+    if (phoneNumber.isNotEmpty) {
+      await FirebaseAuth.instance.verifyPhoneNumber(
+        phoneNumber: '$selectedCountryCode$phoneNumber',
+        verificationCompleted: (PhoneAuthCredential credential) async {
+          await FirebaseAuth.instance.signInWithCredential(credential);
+          // Navigate to OTP screen or home screen
+        },
+        verificationFailed: (FirebaseAuthException e) {
+          // Handle error
+          print('Verification failed: ${e.message}');
+        },
+        codeSent: (String verificationId, int? resendToken) {
+          // Store the verification ID to use it later for verification
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => OtpScreen(verificationId: verificationId),
+            ),
+          );
+        },
+        codeAutoRetrievalTimeout: (String verificationId) {
+          // Auto-retrieval timeout
+        },
+      );
+    } else {
+      // Handle empty phone number
+      print('Please enter a phone number');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -297,7 +331,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => OtpScreen(),
+                        builder: (context) => OtpScreen(
+                          verificationId: '',
+                        ),
                       ),
                     );
                   },

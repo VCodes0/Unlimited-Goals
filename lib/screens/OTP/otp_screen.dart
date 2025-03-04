@@ -4,9 +4,11 @@ import 'package:pinput/pinput.dart';
 import 'package:ug/components/OTP/otp_verify_button.dart';
 import 'package:ug/screens/Profile/profile_screen.dart';
 import 'package:logger/logger.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class OtpScreen extends StatefulWidget {
-  const OtpScreen({super.key});
+  final String verificationId;
+  const OtpScreen({super.key, required this.verificationId});
 
   @override
   State<OtpScreen> createState() => _OtpScreenState();
@@ -14,6 +16,47 @@ class OtpScreen extends StatefulWidget {
 
 class _OtpScreenState extends State<OtpScreen> {
   final logger = Logger();
+  final TextEditingController otpController = TextEditingController();
+  bool isLoading = false;
+
+  Future<void> verifyOTP() async {
+    if (otpController.text.length != 6) {
+      // Show error message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a valid 6-digit OTP')),
+      );
+      return;
+    }
+
+    setState(() {
+      isLoading = true;
+    });
+
+    try {
+      PhoneAuthCredential credential = PhoneAuthProvider.credential(
+        verificationId: widget.verificationId,
+        smsCode: otpController.text,
+      );
+
+      await FirebaseAuth.instance.signInWithCredential(credential);
+
+      // Navigate to profile screen on success
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const ProfileScreen(),
+        ),
+      );
+    } on FirebaseAuthException catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message ?? 'An error occurred')),
+      );
+    } finally {
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -74,11 +117,9 @@ class _OtpScreenState extends State<OtpScreen> {
                 defaultPinTheme: defaultPinTheme,
                 focusedPinTheme: focusedPinTheme,
                 submittedPinTheme: submittedPinTheme,
-                // Enable autofill if available
-                // pinputAutofill: true,
+                controller: otpController,
                 onCompleted: (pin) {
-                  // Verification logic here with the entered pin
-                  logger.i('Entered Pin: $pin');
+                  verifyOTP();
                 },
                 onChanged: (value) {
                   // You can handle changes here if needed
@@ -98,6 +139,8 @@ class _OtpScreenState extends State<OtpScreen> {
                   color: Colors.red,
                   fontSize: 12,
                 ),
+                autofocus: true,
+                enableSuggestions: true,
               ),
 
               SizedBox(height: 20),
@@ -114,15 +157,9 @@ class _OtpScreenState extends State<OtpScreen> {
               ),
               SizedBox(height: 40),
               OTPVerifyButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => ProfileScreen(),
-                      ),
-                    );
-                  },
-                  buttonText: "Verify Now")
+                onPressed: isLoading ? () {} : () => verifyOTP(),
+                buttonText: isLoading ? "Verifying..." : "Verify Now",
+              )
             ],
           ),
         ),
